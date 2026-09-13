@@ -599,7 +599,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   getFirestore, doc, onSnapshot, setDoc
@@ -609,21 +609,20 @@ import {
    EDIT THESE THREE THINGS before you deploy — see README.md
    ============================================================ */
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyA_SkH6ywo8sNj09J__D3QgkJKMlm7w13w",
+  authDomain: "my-schedule-30f8d.firebaseapp.com",
+  projectId: "my-schedule-30f8d",
+  storageBucket: "my-schedule-30f8d.firebasestorage.app",
+  messagingSenderId: "153372812761",
+  appId: "1:153372812761:web:78fd884f472f98b453a5c8"
 };
-const OWNER_EMAIL = "topbliss.hradepartment@gmail.com"; // the Google account allowed to edit
+const OWNER_EMAIL = "topbliss.hradepartment@gmail.com"; // the login you create in Firebase Authentication (Part 2)
 const OWNER_NAME = "Lyka";                               // shown in the header
 /* ============================================================ */
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
-const googleProvider = new GoogleAuthProvider();
 const scheduleDocRef = doc(db, "schedule", "main");
 
 (function(){
@@ -796,11 +795,11 @@ const scheduleDocRef = doc(db, "schedule", "main");
     var label = view==='week' ? weekLabel() : (MONTH_NAMES[anchor.getMonth()]+' '+anchor.getFullYear());
     var accountHtml;
     if (!currentUser){
-      accountHtml = '<div class="account"><button id="sign-in-btn" type="button">Sign in</button></div>';
+      accountHtml = '<div class="account"><button id="sign-in-btn" type="button">Unlock editing</button></div>';
     } else if (!readOnly){
-      accountHtml = '<div class="account"><span class="owner-badge">✓ ' + escapeHtml(currentUser.displayName || currentUser.email) + '</span><button id="sign-out-btn" type="button">Sign out</button></div>';
+      accountHtml = '<div class="account"><span class="owner-badge">✓ Editing unlocked</span><button id="sign-out-btn" type="button">Lock</button></div>';
     } else {
-      accountHtml = '<div class="account"><span>' + escapeHtml(currentUser.displayName || currentUser.email) + ' (view only)</span><button id="sign-out-btn" type="button">Sign out</button></div>';
+      accountHtml = '<div class="account"><span>View only</span><button id="sign-out-btn" type="button">Sign out</button></div>';
     }
     return (
       '<div class="topbar">' +
@@ -994,11 +993,7 @@ const scheduleDocRef = doc(db, "schedule", "main");
     var manageBtn = document.getElementById('manage-cats-btn');
     if (manageBtn) manageBtn.addEventListener('click', function(){ openCategoryModal(); });
     var signInBtn = document.getElementById('sign-in-btn');
-    if (signInBtn) signInBtn.addEventListener('click', function(){
-      signInWithPopup(auth, googleProvider).catch(function(err){
-        showToast('Sign-in failed: ' + (err && err.message ? err.message : 'please try again'));
-      });
-    });
+    if (signInBtn) signInBtn.addEventListener('click', function(){ openSignInModal(); });
     var signOutBtn = document.getElementById('sign-out-btn');
     if (signOutBtn) signOutBtn.addEventListener('click', function(){ signOut(auth); });
   }
@@ -1094,12 +1089,30 @@ const scheduleDocRef = doc(db, "schedule", "main");
 
   function closeModal(){ modal=null; render(); }
 
+  function openSignInModal(){ modal = {type:'signin', error:null}; render(); }
+
+  function signInModalHtml(error){
+    return (
+      '<div class="sheet">' +
+        '<h2>Unlock editing</h2>' +
+        (error ? '<div class="err-banner">'+escapeHtml(error)+'</div>' : '') +
+        '<form id="signin-form">' +
+          '<div class="field"><label for="f-passcode">Passcode</label>' +
+            '<input type="password" id="f-passcode" autocomplete="current-password" autofocus /></div>' +
+          '<button type="submit" class="btn primary" style="width:100%">Unlock</button>' +
+        '</form>' +
+        '<div class="sheet-actions"><button type="button" class="btn" data-close>Cancel</button></div>' +
+      '</div>'
+    );
+  }
+
   function renderModal(){
     var root = document.createElement('div');
     root.className = 'overlay';
     root.id = 'overlay';
     if (modal.type==='event') root.innerHTML = eventModalHtml(modal.draft, modal.error);
     else if (modal.type==='categories') root.innerHTML = categoryModalHtml();
+    else if (modal.type==='signin') root.innerHTML = signInModalHtml(modal.error);
     else root.innerHTML = agendaModalHtml(modal.date);
     app.appendChild(root);
 
@@ -1107,7 +1120,25 @@ const scheduleDocRef = doc(db, "schedule", "main");
     var closeBtns = root.querySelectorAll('[data-close]');
     closeBtns.forEach(function(b){ b.addEventListener('click', closeModal); });
 
-    if (modal.type==='categories'){
+    if (modal.type==='signin'){
+      var signinForm = root.querySelector('#signin-form');
+      signinForm.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        var passcode = signinForm.querySelector('#f-passcode').value;
+        if (!passcode){ modal.error='Enter your passcode.'; render(); return; }
+        signInWithEmailAndPassword(auth, OWNER_EMAIL, passcode).then(function(){
+          modal = null; render();
+        }).catch(function(err){
+          var code = err && err.code;
+          if (code==='auth/wrong-password' || code==='auth/user-not-found' || code==='auth/invalid-credential' || code==='auth/invalid-login-credentials'){
+            modal.error = 'That passcode isn\'t right. Try again.';
+          } else {
+            modal.error = 'Couldn\'t unlock right now. Please try again.';
+          }
+          render();
+        });
+      });
+    } else if (modal.type==='categories'){
       root.querySelectorAll('.swatch').forEach(function(b){
         b.addEventListener('click', function(){
           root.querySelectorAll('.swatch').forEach(function(x){ x.classList.remove('selected'); });
